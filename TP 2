@@ -1,0 +1,158 @@
+#define F_CPU 16000000UL
+#include <avr/interrupt.h
+
+#include <util/delay.h>
+
+
+
+unsigned char SW , n_act, n_ant, Val_act, Val_ant;
+unsigned int duty=0, tens = 0, units = 0;
+const unsigned char display_table[]= {0xC0,0xF9,0xA4,0xB0,0x99,0x92,0x82,0xF8,0x80,0x90,0xFF,};
+volatile unsigned int flag_5ms=0;
+
+
+void init (void)
+{
+
+	DDRD = 0b11000000;
+	PORTD = 0b1100000;
+
+	DDRC = 0xFF;
+	PORTC = 0xFF;
+
+	OCR0 = 77 ;
+	TCCR0 = 0b00001111;
+	TIMSK |= 0b00000010;
+
+	EICRA = 0b10101010;
+	EIMSK = 0b00000011;
+
+	DDRB= 0b11100000;
+	PORTB = 0b10100000;
+
+	OCR2 = (duty*255)/100;
+	TCCR2 = 0b01100011;
+
+
+
+	sei();
+
+}
+ISR(TIMER0_COMP_vect)
+{
+	flag_5ms = 1;
+}
+
+ISR(INT0_vect)
+{
+
+}
+
+ISR(INT1_vect)
+{
+
+}
+
+// Função para ajustar a velocidade do motor
+void ajustarVelocidade(int8_t incremento)
+{
+	if (incremento > 0 && duty < 100) {
+		duty += 5;
+		} else if (incremento < 0 && duty > 0) {
+		duty -= 5;
+	}
+
+	// Calcular o valor do registrador OCR0A para o novo ciclo de trabalho
+	uint8_t cicloDeTrabalho = (duty * 255) / 100;
+	OCR2 = cicloDeTrabalho;
+}
+
+void mudar_rot(void)
+{
+	if (PORTB & (1<<5))
+	{
+		PORTB |= (1<<5)|(1<<6);
+		_delay_ms(500);
+		PORTB &=~(1<<5);
+
+	}else
+	{
+		PORTB |=(1<<5)|(1<<6);
+		_delay_ms(500);
+		PORTB &= ~(1<<6);
+	}
+}
+
+void display_func (void){
+
+	//process duty
+	units = duty % 10 ;
+	tens = (duty - units) / 10 ;
+
+	//display
+	PORTD = 0b11000000;
+	PORTC = display_table[units];
+	flag_5ms = 0 ;
+	while(flag_5ms == 0);
+
+	PORTD = 0b10000000;
+	PORTC = display_table[tens];
+	flag_5ms = 0 ;
+	while (flag_5ms == 0);
+
+	//PORTD = 0b01000000;
+	//PORTC = display_table[direction];
+	//flag_5ms = 0 ;
+	//while (flag_5ms = 0);
+
+}
+
+int main(void){
+
+	init();
+
+	OCR2=0;
+
+	while (1)
+	{
+		display_func();
+		SW = PIND & 0b00110011;
+
+
+		switch (SW)
+		{
+			case 0b00010011: // SW6 STOP
+			duty = 0 ;
+			OCR2 = 0;
+			display_func();
+			break;
+
+			case 0b00100011: // SW5 INVERTE
+			Val_act = PINB & (1<<0);
+			if (Val_act == 0 && Val_ant == 1)
+			{
+				mudar_rot();
+			}
+			Val_ant = Val_act;
+			mudar_rot() ;
+			display_func();
+			break;
+
+			case 0b00110010: // SW1 LIGA
+			ajustarVelocidade(1);
+			//_delay_ms(200);
+			//display_func();
+			break;
+
+			case 0b00110001 : // SW2 DECREMENTA
+			ajustarVelocidade(-1);
+			//_delay_ms(200);
+			//display_func();
+			break;
+
+		}
+
+
+	}
+
+}
